@@ -6,11 +6,18 @@ class EnumBase {
             .pop();
     }
 
-    static enumById(id) {
+    static enumFromIncoming(id) {
         return Object.values(this)
-            .filter(v => id == v.id)
+            .filter(v => id == v.inId)
             .pop();
     }
+
+    static enumFromOutgoing(id) {
+        return Object.values(this)
+            .filter(v => id == v.outId)
+            .pop();
+    }
+
 }
 
 class Enum extends EnumBase {

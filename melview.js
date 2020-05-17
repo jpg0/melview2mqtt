@@ -61,52 +61,67 @@ class Melview {
     async _sendCommand(unitId, command) {
         return await this._req("unitcommand", {
             unitid: unitId,
-            v: 2, //verbosity
+            v: 3, //verbosity
             commands: command,
             lc: 1
         })
     }
 
-    async buildings() {
+    async unit(unitId, roomName) {
+        let unitDef = await this._req("unitcommand", {
+            unitid: unitId,
+            v: 3, //verbosity
+            lc: 1
+        });
+
         let $this = this;
-        return (await this._req("rooms")).map(buildingDef => ({
+
+        return {
+            power: Power.enumFromOutgoing(unitDef.power),
+            fanSpeed: FanSpeed.enumFromOutgoing(unitDef.setfan),
+            mode: Mode.enumFromOutgoing(unitDef.setmode),
+            roomName: roomName,
+            id: unitId,
+            ambientTemperature: unitDef.roomtemp,
+            targetTemperature: unitDef.settemp,
+            async setMode(mode) {
+                if(!mode) throw `Invalid MODE ${mode}`;
+
+                return await $this._sendCommand(unitId, mode.command())
+            },
+            async setFanSpeed(fanSpeed) {
+                if(!fanSpeed) throw `Invalid FanSpeed ${fanSpeed}`;
+
+                return await $this._sendCommand(unitId, fanSpeed.command())
+            },
+            async setPower(power) {
+                if(!power) throw `Invalid POWER ${power}`;
+
+                return await $this._sendCommand(unitId, power.command())
+            },
+            async setTemperature(tempFloat) {
+                if(!tempFloat) throw `Invalid POWER ${tempFloat}`;
+
+                return await $this._sendCommand(unitId, `TS${tempFloat}`)
+            },
+            async capabilities() {
+                return await $this._req('unitcapabilities', {
+                    unitid: unitId
+                })
+            }
+        };
+    }
+
+    async buildings() {
+        let buildings = await this._req("rooms");
+
+        let units = (unitDefs) => Promise.all(unitDefs.map(unitDef => this.unit(unitDef.unitid, unitDef.room)));
+
+        return await Promise.all(buildings.map(async buildingDef => ({
             name: buildingDef.building,
             id: buildingDef.buildingid,
-            rooms: buildingDef.units.map(roomDef => ({
-                name: roomDef.room,
-                id: roomDef.unitid,
-                async setMode(mode) {
-                    return await $this._sendCommand(roomDef.unitid, mode.command())
-                },
-                async setFanSpeed(fanSpeed) {
-                    return await $this._sendCommand(roomDef.unitid, fanSpeed.command())
-                },
-                async setPower(power) {
-                    return await $this._sendCommand(roomDef.unitid, power.command())
-                },
-                async setTemperature(tempFloat) {
-                    return await $this._sendCommand(roomDef.unitid, `TS${tempFloat}`)
-                },
-                ambientTemperature: roomDef.temp,
-                targetTemperature: roomDef.settemp,
-                mode: Mode.enumById(roomDef.mode),
-                power: Power.enumById(roomDef.power),
-                /*"room": "ROOM2",
-				"unitid": "456",
-				"power": "q",
-				"wifi": "3",
-				"mode": "3",
-				"temp": "18",
-				"settemp": "19",
-				"status": "",
-                "schedule1": 0*/
-                async capabilities() {
-                    return await $this._req('unitcapabilities', {
-                        unitid: roomDef.unitid
-                    })
-                }
-            }))
-        }))
+            units: (await units(buildingDef.units))
+        })))
     }
 
 }
@@ -114,11 +129,11 @@ class Melview {
 class Mode extends Enum {
     constructor(id) {
         super();
-        this.id = id;
+        this.inId = this.outId = id;
     }
 
     command() {
-        return `MD${this.id}`;
+        return `MD${this.outId}`;
     }
 
     static HEAT = new Mode(1);
@@ -131,31 +146,32 @@ class Mode extends Enum {
 class FanSpeed extends Enum {
     constructor(id) {
         super();
-        this.id = id;
+        this.inId = this.outId = id;
     }
 
     command() {
-        return `FS${this.id}`;
+        return `FS${this.outId}`;
     }
 
-    static LOW = new FanSpeed(2);
-    static MID = new FanSpeed(3);
-    static HIGH = new FanSpeed(5);
+    static 0 = new FanSpeed(1);
+    static 1 = new FanSpeed(3);
+    static 2 = new FanSpeed(6);
     static AUTO = new FanSpeed(0);
 }
 
 class Power extends Enum {
-    constructor(id) {
+    constructor(inId, outId) {
         super();
-        this.id = id;
+        this.inId = inId;
+        this.outId = outId;
     }
 
     command() {
-        return `PW${this.id}`;
+        return `PW${this.outId}`;
     }
 
-    static ON = new Power('on');
-    static OFF = new Power('q');
+    static ON = new Power('on', '1');
+    static OFF = new Power('q', '0');
 }
 
 module.exports = {

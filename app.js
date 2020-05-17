@@ -2,11 +2,11 @@
 
 const winston = require('winston');
 const mqtt = require('mqtt')
-const { Melview } = require('./melview');
+const { Melview, Power, Mode, FanSpeed } = require('./melview');
 
 const MQTT_TOPIC = "/hvac/melview"
-const MQTT_STATE_TOPIC = "/stat" + MQTT_TOPIC
-const MQTT_COMMAND_TOPIC = "/cmnd" + MQTT_TOPIC
+const MQTT_STATE_TOPIC = "stat" + MQTT_TOPIC
+const MQTT_COMMAND_TOPIC = "cmnd" + MQTT_TOPIC
 
 const argv = require('yargs')
     .env()
@@ -68,44 +68,64 @@ mqttClient.on('connect', function (connack) {
 
 let writeStatusToMqtt = () => {
     melview.buildings().then(buildings => buildings.forEach(building => {
-        building.rooms.forEach(room => {
-            room.dump();
-            ["mode", "power", "ambientTemperature", "targetTemperature"].forEach(prop => {
-                mqttClient.publish(`${MQTT_STATE_TOPIC}/building/${building.id}/room/${room.id}/${prop}`, room[prop].toString());
+        building.units.forEach(unit => {
+            ["mode", "power", "fanSpeed", "ambientTemperature", "targetTemperature"].forEach(prop => {
+                mqttClient.publish(`${MQTT_STATE_TOPIC}/building/${building.id}/unit/${unit.id}/${prop}`, unit[prop].toString());
             })
         })
     })).catch(logger.error)
+}
 
-    setTimeout(writeStatusToMqtt, pollTime);
+let writeStatusToMqttLoop = () => {
+    writeStatusToMqtt();
+    setTimeout(writeStatusToMqttLoop, pollTime);
 }
 
 let runMqtt2Melview = () => {
     mqttClient.subscribe(MQTT_COMMAND_TOPIC + "/#")
 
     mqttClient.on('message', function (topic, message) {
-        let [,,buildingId,,roomId,feature] = topic.slice(MQTT_COMMAND_TOPIC.length).split('/');
+
+        logger.debug("Received MQTT message on topic: " + topic);
+
+        let [,,buildingId,,unitId,feature] = topic.slice(MQTT_COMMAND_TOPIC.length).split('/');
 
         melview.buildings()
             .then(buildings => {
-                let room = buildings.filter(building => building.id == buildingId)
-                .rooms().filter(room => room.id == roomId)
+                let building = buildings.find(building => building.id == buildingId)
+                
+                if(!building) {
+                    throw `Building [${buildingId}] not found`
+                }
+                
+                let unit = building.units.find(unit => unit.id == unitId);
 
-                switch(feature) {
+                if(!unit) {
+                    throw `Room [${unitId}] not found`
+                }
+
+                let cmd = message.toString().toUpperCase();
+
+                switch(feature.toUpperCase()) {
                     case 'POWER':
-                        return room.setPower(Power.enumValueOf(message));
+                        return unit.setPower(Power.enumValueOf(cmd));
                     case 'MODE':
-                        return room.setMode(Mode.enumValueOf(message));
+                        return unit.setMode(Mode.enumValueOf(cmd));
                     case 'FANSP':
-                        return room.setFanSpeed(FanSpeed.enumValueOf(message));
+                        return unit.setFanSpeed(FanSpeed.enumValueOf(cmd));
                     case 'TEMP':
-                        return room.setTemperature(message);
+                        return unit.setTemperature(message);
                     default:
                         throw `Unknown operation ${feature}`
 
             }})
-            .catch(logger.error)
+            .then(writeStatusToMqtt)
+            .catch(e => {
+                logger.error(e);
+                writeStatusToMqtt()
+            })
     })
 }
 
-writeStatusToMqtt();
+writeStatusToMqttLoop();
 runMqtt2Melview();
