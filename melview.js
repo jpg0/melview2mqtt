@@ -102,7 +102,7 @@ class Melview {
             async setTemperature(tempFloat) {
                 if(!tempFloat) throw `Invalid POWER ${tempFloat}`;
 
-                return await $this._sendCommand(unitId, `TS${tempFloat}`)
+                return await $this._sendCommand(unitId, `TS${Math.floor(tempFloat)}`)
             },
             async capabilities() {
                 return await $this._req('unitcapabilities', {
