@@ -13,7 +13,7 @@
     "moment": "^2.29.4",
     "mqtt": "^2.18.8",
     "mqtt-packet": ">=5.6.1",
-    "superagent": "^5.2.2",
+    "superagent": "^5.3.1",
     "winston": "^3.1.0",
     "yargs": "^17.7.2"
   }
